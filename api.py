@@ -8,7 +8,7 @@ from fastapi import FastAPI, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .db_models import (
+from db_models import (
     get_session,
     User as DBUser,
     Post as DBPost,
@@ -17,7 +17,7 @@ from .db_models import (
     Notification as DBNotification,
     ConversationParticipant,
 )
-from .db_repo import (
+from db_repo import (
     create_user,
     get_user_by_handle,
     update_user_bio,
