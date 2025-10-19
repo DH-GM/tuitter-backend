@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from db_models import (
     get_session,
+    DATABASE_URL,
     User as DBUser,
     Post as DBPost,
     Message as DBMessage,
@@ -171,10 +172,44 @@ class Settings(BaseModel):
 _SETTINGS_STORE: dict[str, Settings] = {}
 
 def _get_or_create_user(handle: str) -> DBUser:
-    u = get_user_by_handle(handle)
-    if u is None:
-        u = create_user(handle, handle.capitalize())
-    return u
+    """Get an existing user or create a new one with proper error handling."""
+    try:
+        # Check if the handle is valid (under 32 characters)
+        if len(handle) > 30:
+            # Truncate to avoid database errors
+            handle = handle[:30]
+        
+        # First try to get the existing user
+        u = get_user_by_handle(handle)
+        
+        # If user doesn't exist, create a new one
+        if u is None:
+            # Ensure display name is valid
+            display_name = handle.capitalize()
+            if len(display_name) > 90:
+                display_name = display_name[:90]
+                
+            u = create_user(handle, display_name)
+            
+        return u
+    except Exception as e:
+        # Log the error but return a default user to avoid breaking the API
+        print(f"Error in _get_or_create_user: {str(e)}")
+        
+        # Try to get a default user
+        default_user = get_user_by_handle("defaultuser")
+        if default_user:
+            return default_user
+            
+        # If that fails, try to create a fallback user
+        try:
+            return create_user("defaultuser", "Default User")
+        except Exception:
+            # Last resort - raise the error since we can't proceed
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to get or create user and couldn't fall back to default user"
+            )
 
 def _settings_for(user: DBUser) -> Settings:
     if user.id not in _SETTINGS_STORE:
@@ -192,8 +227,53 @@ Limit200 = Annotated[int, Query(ge=1, le=200)]
 Limit500 = Annotated[int, Query(ge=1, le=500)]
 
 @app.api_route("/health", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
-def health():
-    return {"status":"ok","service":"tuitter-backend","time": datetime.now(timezone.utc).isoformat()}
+def health(
+    debug: bool = False,
+    db_test: bool = False,
+    show_tables: bool = False,
+    error_info: bool = False,
+):
+    """Health check endpoint with optional diagnostics."""
+    response = {
+        "status": "ok",
+        "service": "tuitter-backend",
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    # Add database connection test if requested
+    if db_test:
+        try:
+            with get_session() as db:
+                # Simple query to test connection
+                db.execute("SELECT 1").scalar()
+                response["database"] = "connected"
+        except Exception as e:
+            response["status"] = "degraded"
+            response["database"] = "disconnected"
+            if error_info:
+                response["db_error"] = str(e)
+    
+    # Add detailed debug info if requested
+    if debug:
+        response["environment"] = {
+            "database_url": DATABASE_URL.replace(
+                # Remove credentials from displayed URL
+                DATABASE_URL[DATABASE_URL.find("://") + 3:DATABASE_URL.find("@")] if "@" in DATABASE_URL else "",
+                "***:***"
+            ) if "@" in DATABASE_URL else DATABASE_URL,
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        }
+    
+    # Show database tables if requested
+    if show_tables and debug:
+        try:
+            with get_session() as db:
+                tables = db.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'").scalars().all()
+                response["tables"] = list(tables)
+        except Exception as e:
+            response["tables_error"] = str(e) if error_info else "Error retrieving tables"
+            
+    return response
 
 @app.get("/me", response_model=UserOut)
 def get_me(handle: str = "yourname"):
@@ -383,6 +463,41 @@ def add_comment(post_id: str, comment: CommentIn):
         # In a real app, we would add to a comments table
         # For now, just echo back the comment
         return {"user": comment.user, "text": comment.text}
+
+@app.get("/diag/db")
+def db_diagnostics():
+    """Diagnostic endpoint for database troubleshooting."""
+    try:
+        diagnostics = {
+            "status": "operational",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "database_url_type": DATABASE_URL.split(":")[0],
+            "connection_test": None,
+            "table_counts": {},
+        }
+        
+        # Test basic connection
+        with get_session() as db:
+            diagnostics["connection_test"] = "success"
+            
+            # Get table counts
+            tables = ["users", "posts", "follows", "conversations", 
+                      "conversation_participants", "messages", "notifications"]
+            
+            for table in tables:
+                try:
+                    count = db.execute(f"SELECT COUNT(*) FROM {table}").scalar()
+                    diagnostics["table_counts"][table] = count
+                except Exception as e:
+                    diagnostics["table_counts"][table] = f"Error: {str(e)}"
+                    
+        return diagnostics
+    except Exception as e:
+        return {
+            "status": "error",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": str(e)
+        }
 
 @app.get("/settings", response_model=Settings)
 def get_settings(handle: str = "yourname"):

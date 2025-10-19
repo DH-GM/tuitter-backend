@@ -35,19 +35,32 @@ def uid() -> str:
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///socialvim.db")
-ENGINE = create_engine(DATABASE_URL, echo=False, future=True)
+# Fix postgres:// URLs for SQLAlchemy
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Configure SQLAlchemy engine with connection pool settings suitable for cloud deployment
+ENGINE = create_engine(
+    DATABASE_URL, 
+    echo=False, 
+    future=True,
+    pool_pre_ping=True,  # Test connections before using them
+    pool_recycle=300,    # Recycle connections every 5 minutes
+    pool_size=5,         # Maintain up to 5 connections
+    max_overflow=10      # Allow up to 10 additional connections under load
+)
 SessionLocal = sessionmaker(bind=ENGINE, expire_on_commit=False, future=True)
 
 
 # ---------- tables ----------
 class User(Base):
     __tablename__: ClassVar[str] = "users"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
-    handle: Mapped[str] = mapped_column(String, unique=True, index=True)
-    display_name: Mapped[str] = mapped_column(String)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    handle: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(100))
     bio: Mapped[str] = mapped_column(Text, default="")
     ascii_pic: Mapped[str] = mapped_column(Text, default="")
-    email: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -62,7 +75,7 @@ class User(Base):
 
 class Post(Base):
     __tablename__: ClassVar[str] = "posts"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     author_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     content: Mapped[str] = mapped_column(Text)
     parent_id: Mapped[str | None] = mapped_column(
@@ -95,7 +108,7 @@ _ = Index("idx_follows_followed", Follow.followed_id)
 
 class Conversation(Base):
     __tablename__: ClassVar[str] = "conversations"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     created_at: Mapped[dt.datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -114,7 +127,7 @@ _ = Index("idx_cp_user", ConversationParticipant.user_id)
 
 class Message(Base):
     __tablename__: ClassVar[str] = "messages"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id"), index=True
     )
@@ -131,10 +144,10 @@ _ = Index("idx_messages_conv_time", Message.conversation_id, Message.created_at.
 
 class Notification(Base):
     __tablename__: ClassVar[str] = "notifications"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)  # receiver
     type: Mapped[str] = mapped_column(
-        String
+        String(20)
     )  # 'mention','like','repost','follow','reply'
     actor_id: Mapped[str] = mapped_column(
         ForeignKey("users.id"), index=True
@@ -160,4 +173,13 @@ def create_db() -> None:
 
 
 def get_session():
-    return SessionLocal()
+    """Create a new database session with validation and error handling."""
+    session = SessionLocal()
+    try:
+        # Validate that the connection is working with a simple query
+        session.execute("SELECT 1")
+        return session
+    except Exception as e:
+        session.close()
+        print(f"Database connection error: {str(e)}")
+        raise
