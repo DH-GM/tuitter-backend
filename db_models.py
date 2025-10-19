@@ -35,10 +35,6 @@ def uid() -> str:
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///socialvim.db")
-
-# normalize for psycopg 3
-if DATABASE_URL.startswith("postgresql://") and "+psycopg" not in DATABASE_URL:
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 ENGINE = create_engine(DATABASE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=ENGINE, expire_on_commit=False, future=True)
 
