@@ -1,19 +1,9 @@
-# Core framework
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-
-# Database ORM + driver
 SQLAlchemy==2.0.35
 psycopg[binary]==3.2.2
-
-# Data validation / serialization
 pydantic==2.9.2
-pydantic-settings==2.5.2
 typing-extensions>=4.12.2
-
-# Optional utilities
 python-dotenv==1.0.1
-
-# Development / Linting
 ruff==0.6.8
 pyright==1.1.382
