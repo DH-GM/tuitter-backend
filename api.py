@@ -37,27 +37,63 @@ from db_repo import (
 )
 
 class UserOut(BaseModel):
-    id: str
-    handle: str
+    # matches frontend User dataclass
+    username: str
     display_name: str
     bio: str
+    followers: int = 0
+    following: int = 0
+    posts_count: int = 0
+    ascii_pic: str = ""
+
     @staticmethod
-    def from_db(u: DBUser) -> "UserOut":
-        return UserOut(id=u.id, handle=u.handle, display_name=u.display_name, bio=u.bio or "")
+    def from_db(u: DBUser, db) -> "UserOut":
+        # compute posts_count and follower counts
+        posts_count = db.query(DBPost).filter(DBPost.author_id == u.id).count()
+        followers = db.execute(
+            "SELECT COUNT(*) FROM follows WHERE followed_id = :uid",
+            {"uid": u.id}
+        ).scalar() or 0
+        following = db.execute(
+            "SELECT COUNT(*) FROM follows WHERE follower_id = :uid",
+            {"uid": u.id}
+        ).scalar() or 0
+        return UserOut(
+            username=u.handle,
+            display_name=u.display_name,
+            bio=u.bio or "",
+            followers=int(followers),
+            following=int(following),
+            posts_count=int(posts_count),
+            ascii_pic=(u.ascii_pic if getattr(u, 'ascii_pic', None) else ""),
+        )
 
 class PostOut(BaseModel):
+    # matches frontend Post dataclass
     id: str
-    author_id: str
+    author: str
     content: str
-    created_at: datetime
-    likes_count: int
-    reposts_count: int
-    comments_count: int
+    timestamp: datetime
+    likes: int = 0
+    reposts: int = 0
+    comments: int = 0
+    liked_by_user: bool = False
+    reposted_by_user: bool = False
+
     @staticmethod
-    def from_db(p: DBPost) -> "PostOut":
+    def from_db(p: DBPost, db) -> "PostOut":
+        author = db.get(DBUser, p.author_id)
+        author_handle = author.handle if author else "unknown"
         return PostOut(
-            id=p.id, author_id=p.author_id, content=p.content, created_at=p.created_at,
-            likes_count=p.likes_count or 0, reposts_count=p.reposts_count or 0, comments_count=p.comments_count or 0
+            id=p.id,
+            author=author_handle,
+            content=p.content,
+            timestamp=p.created_at,
+            likes=int(p.likes_count or 0),
+            reposts=int(p.reposts_count or 0),
+            comments=int(p.comments_count or 0),
+            liked_by_user=False,
+            reposted_by_user=False,
         )
 
 class PostCreate(BaseModel):
@@ -66,17 +102,23 @@ class PostCreate(BaseModel):
     parent_id: Optional[str] = None
 
 class MessageOut(BaseModel):
+    # matches frontend Message dataclass
     id: str
-    conversation_id: str
-    sender_id: str
+    sender: str
     content: str
-    created_at: datetime
-    is_read: bool
+    timestamp: datetime
+    is_read: bool = False
+
     @staticmethod
-    def from_db(m: DBMessage) -> "MessageOut":
+    def from_db(m: DBMessage, db) -> "MessageOut":
+        sender = db.get(DBUser, m.sender_id)
+        sender_handle = sender.handle if sender else "unknown"
         return MessageOut(
-            id=m.id, conversation_id=m.conversation_id, sender_id=m.sender_id, content=m.content,
-            created_at=m.created_at, is_read=bool(m.is_read)
+            id=m.id,
+            sender=sender_handle,
+            content=m.content,
+            timestamp=m.created_at,
+            is_read=bool(m.is_read),
         )
 
 class MessageCreate(BaseModel):
@@ -84,23 +126,34 @@ class MessageCreate(BaseModel):
     content: str
 
 class ConversationOut(BaseModel):
+    # matches frontend Conversation dataclass
     id: str
-    participant_handles: list[str]
-    last_message_preview: str | None = None
-    last_message_at: datetime | None = None
+    username: str
+    last_message: str | None = None
+    timestamp: datetime | None = None
+    unread: bool = False
 
 class DMOpenRequest(BaseModel):
     user_a_handle: str
     user_b_handle: str
 
 class NotificationOut(BaseModel):
+    # matches frontend Notification dataclass
     id: str
     type: str
-    actor_id: str
+    actor: str
     content: str
-    related_post_id: Optional[str]
-    created_at: datetime
+    timestamp: datetime
     read: bool
+    related_post: Optional[str]
+
+class CommentIn(BaseModel):
+    text: str
+    user: str = "yourname"
+
+class CommentOut(BaseModel):
+    user: str
+    text: str
 
 class Settings(BaseModel):
     username: str
@@ -144,32 +197,42 @@ def health():
 
 @app.get("/me", response_model=UserOut)
 def get_me(handle: str = "yourname"):
-    return UserOut.from_db(_get_or_create_user(handle))
+    u = _get_or_create_user(handle)
+    with get_session() as db:
+        return UserOut.from_db(u, db)
 
 @app.get("/timeline", response_model=list[PostOut])
 def get_timeline(limit: Limit200 = 50):
-    return [PostOut.from_db(p) for p in list_feed(limit=limit)]
+    with get_session() as db:
+        posts = list_feed(limit=limit)
+        return [PostOut.from_db(p, db) for p in posts]
 
 @app.get("/discover", response_model=list[PostOut])
 def get_discover(limit: Limit200 = 50):
-    return [PostOut.from_db(p) for p in list_feed(limit=limit)]
+    with get_session() as db:
+        posts = list_feed(limit=limit)
+        return [PostOut.from_db(p, db) for p in posts]
 
 @app.get("/posts", response_model=list[PostOut])
 def list_posts(limit: Limit200 = 50):
-    return [PostOut.from_db(p) for p in list_feed(limit=limit)]
+    with get_session() as db:
+        posts = list_feed(limit=limit)
+        return [PostOut.from_db(p, db) for p in posts]
 
 @app.post("/posts", response_model=PostOut, status_code=201)
 def create_post_ep(payload: PostCreate):
     author = _get_or_create_user(payload.author_handle)
     p = repo_create_post(author_id=author.id, content=payload.content, parent_id=payload.parent_id)
-    return PostOut.from_db(p)
+    with get_session() as db:
+        return PostOut.from_db(p, db)
 
 @app.get("/posts/{post_id}", response_model=PostOut)
 def get_post_ep(post_id: str):
     p = repo_get_post(post_id)
     if not p:
         raise HTTPException(status_code=404, detail="Post not found")
-    return PostOut.from_db(p)
+    with get_session() as db:
+        return PostOut.from_db(p, db)
 
 @app.delete("/posts/{post_id}", status_code=204)
 def delete_post_ep(post_id: str):
@@ -184,9 +247,16 @@ def like_post(post_id: str):
         p = db.get(DBPost, post_id)
         if not p:
             raise HTTPException(status_code=404, detail="Post not found")
-        p.likes_count = (p.likes_count or 0) + 1
+        
+        # Toggle like (increment if not liked, decrement if liked)
+        liked_status = True  # In a real app, would check user's like status
+        if liked_status:
+            p.likes_count = (p.likes_count or 0) + 1
+        else:
+            p.likes_count = max(0, (p.likes_count or 0) - 1)
+            
         db.commit(); db.refresh(p)
-        return PostOut.from_db(p)
+        return PostOut.from_db(p, db)
 
 @app.post("/posts/{post_id}/repost", response_model=PostOut)
 def repost_post(post_id: str):
@@ -194,9 +264,16 @@ def repost_post(post_id: str):
         p = db.get(DBPost, post_id)
         if not p:
             raise HTTPException(status_code=404, detail="Post not found")
-        p.reposts_count = (p.reposts_count or 0) + 1
+        
+        # Toggle repost (increment if not reposted, decrement if reposted)
+        reposted_status = True  # In a real app, would check user's repost status
+        if reposted_status:
+            p.reposts_count = (p.reposts_count or 0) + 1
+        else:
+            p.reposts_count = max(0, (p.reposts_count or 0) - 1)
+            
         db.commit(); db.refresh(p)
-        return PostOut.from_db(p)
+        return PostOut.from_db(p, db)
 
 @app.get("/conversations", response_model=list[ConversationOut])
 def list_conversations():
@@ -213,30 +290,37 @@ def list_conversations():
                     handles.append(user.handle)
             last = (db.query(DBMessage).filter(DBMessage.conversation_id == c.id)
                     .order_by(DBMessage.created_at.desc()).first())
+            # choose a display username (first other participant)
+            username = handles[0] if handles else "unknown"
             results.append(ConversationOut(
                 id=c.id,
-                participant_handles=handles,
-                last_message_preview=last.content if last else None,
-                last_message_at=last.created_at if last else None
+                username=(handles[1] if len(handles) > 1 else username),
+                last_message=(last.content if last else None),
+                timestamp=(last.created_at if last else None),
+                unread=False,
             ))
         return results
 
 @app.get("/conversations/{conv_id}/messages", response_model=list[MessageOut])
 def get_conversation_messages(conv_id: str, limit: Limit500 = 100):
-    return [MessageOut.from_db(m) for m in list_dm(conv_id, limit=limit)]
+    with get_session() as db:
+        msgs = list_dm(conv_id, limit=limit)
+        return [MessageOut.from_db(m, db) for m in msgs]
 
 @app.post("/conversations/{conv_id}/messages", response_model=MessageOut, status_code=201)
 def send_conversation_message(conv_id: str, payload: MessageCreate):
     sender = _get_or_create_user(payload.sender_handle)
     m = send_dm(conversation_id=conv_id, sender_id=sender.id, text=payload.content)
-    return MessageOut.from_db(m)
+    with get_session() as db:
+        return MessageOut.from_db(m, db)
 
 @app.post("/dm", response_model=ConversationOut, status_code=201)
 def open_dm(req: DMOpenRequest):
     a = _get_or_create_user(req.user_a_handle)
     b = _get_or_create_user(req.user_b_handle)
     conv = get_or_create_dm(a.id, b.id)
-    return ConversationOut(id=conv.id, participant_handles=[a.handle, b.handle])
+    other = b.handle if a.handle == req.user_a_handle else a.handle
+    return ConversationOut(id=conv.id, username=other, last_message=None, timestamp=None, unread=False)
 
 @app.get("/notifications", response_model=list[NotificationOut])
 def get_notifications(handle: str = "yourname"):
@@ -246,10 +330,19 @@ def get_notifications(handle: str = "yourname"):
             db.query(DBNotification).filter(DBNotification.user_id == user.id)
             .order_by(DBNotification.created_at.desc()).all()
         )
-        return [NotificationOut(
-            id=n.id, type=n.type, actor_id=n.actor_id, content=n.content or "",
-            related_post_id=n.related_post_id, created_at=n.created_at, read=bool(n.read)
-        ) for n in rows]
+        results: list[NotificationOut] = []
+        for n in rows:
+            actor = db.get(DBUser, n.actor_id)
+            results.append(NotificationOut(
+                id=n.id,
+                type=n.type,
+                actor=(actor.handle if actor else "unknown"),
+                content=n.content or "",
+                timestamp=n.created_at,
+                read=bool(n.read),
+                related_post=(n.related_post_id if n.related_post_id else None),
+            ))
+        return results
 
 @app.post("/notifications/{notif_id}/read")
 def mark_notification_read_ep(notif_id: str):
@@ -257,6 +350,39 @@ def mark_notification_read_ep(notif_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="Notification not found")
     return {"ok": True}
+
+@app.get("/posts/{post_id}/comments")
+def get_comments(post_id: str):
+    """Return comments for a post"""
+    # Check if post exists
+    p = repo_get_post(post_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Post not found")
+        
+    # In a real app, these would be stored in a comments table
+    # For now, return dummy data matching format expected by frontend
+    comments = [
+        {"user": "alice", "text": "Looks awesome!"},
+        {"user": "bob", "text": "🔥"}
+    ]
+    return comments
+
+@app.post("/posts/{post_id}/comments")
+def add_comment(post_id: str, comment: CommentIn):
+    """Add a comment to a post"""
+    with get_session() as db:
+        # Check if post exists
+        p = db.get(DBPost, post_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        # Increment comments count
+        p.comments_count = (p.comments_count or 0) + 1
+        db.commit()
+        
+        # In a real app, we would add to a comments table
+        # For now, just echo back the comment
+        return {"user": comment.user, "text": comment.text}
 
 @app.get("/settings", response_model=Settings)
 def get_settings(handle: str = "yourname"):
