@@ -49,14 +49,15 @@ class UserOut(BaseModel):
 
     @staticmethod
     def from_db(u: DBUser, db) -> "UserOut":
+        from sqlalchemy import text
         # compute posts_count and follower counts
         posts_count = db.query(DBPost).filter(DBPost.author_id == u.id).count()
         followers = db.execute(
-            "SELECT COUNT(*) FROM follows WHERE followed_id = :uid",
+            text("SELECT COUNT(*) FROM follows WHERE followed_id = :uid"),
             {"uid": u.id}
         ).scalar() or 0
         following = db.execute(
-            "SELECT COUNT(*) FROM follows WHERE follower_id = :uid",
+            text("SELECT COUNT(*) FROM follows WHERE follower_id = :uid"),
             {"uid": u.id}
         ).scalar() or 0
         return UserOut(
@@ -178,36 +179,36 @@ def _get_or_create_user(handle: str) -> DBUser:
         if len(handle) > 30:
             # Truncate to avoid database errors
             handle = handle[:30]
-        
+
         # First try to get the existing user
         u = get_user_by_handle(handle)
-        
+
         # If user doesn't exist, create a new one
         if u is None:
             # Ensure display name is valid
             display_name = handle.capitalize()
             if len(display_name) > 90:
                 display_name = display_name[:90]
-                
+
             u = create_user(handle, display_name)
-            
+
         return u
     except Exception as e:
         # Log the error but return a default user to avoid breaking the API
         print(f"Error in _get_or_create_user: {str(e)}")
-        
+
         # Try to get a default user
         default_user = get_user_by_handle("defaultuser")
         if default_user:
             return default_user
-            
+
         # If that fails, try to create a fallback user
         try:
             return create_user("defaultuser", "Default User")
         except Exception:
             # Last resort - raise the error since we can't proceed
             raise HTTPException(
-                status_code=500, 
+                status_code=500,
                 detail="Failed to get or create user and couldn't fall back to default user"
             )
 
@@ -239,20 +240,21 @@ def health(
         "service": "tuitter-backend",
         "time": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     # Add database connection test if requested
     if db_test:
         try:
+            from sqlalchemy import text
             with get_session() as db:
-                # Simple query to test connection
-                db.execute("SELECT 1").scalar()
+                # Simple query to test connection using text()
+                db.execute(text("SELECT 1")).scalar()
                 response["database"] = "connected"
         except Exception as e:
             response["status"] = "degraded"
             response["database"] = "disconnected"
             if error_info:
                 response["db_error"] = str(e)
-    
+
     # Add detailed debug info if requested
     if debug:
         response["environment"] = {
@@ -263,16 +265,17 @@ def health(
             ) if "@" in DATABASE_URL else DATABASE_URL,
             "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         }
-    
+
     # Show database tables if requested
     if show_tables and debug:
         try:
+            from sqlalchemy import text
             with get_session() as db:
-                tables = db.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'").scalars().all()
+                tables = db.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).scalars().all()
                 response["tables"] = list(tables)
         except Exception as e:
             response["tables_error"] = str(e) if error_info else "Error retrieving tables"
-            
+
     return response
 
 @app.get("/me", response_model=UserOut)
@@ -327,14 +330,14 @@ def like_post(post_id: str):
         p = db.get(DBPost, post_id)
         if not p:
             raise HTTPException(status_code=404, detail="Post not found")
-        
+
         # Toggle like (increment if not liked, decrement if liked)
         liked_status = True  # In a real app, would check user's like status
         if liked_status:
             p.likes_count = (p.likes_count or 0) + 1
         else:
             p.likes_count = max(0, (p.likes_count or 0) - 1)
-            
+
         db.commit(); db.refresh(p)
         return PostOut.from_db(p, db)
 
@@ -344,14 +347,14 @@ def repost_post(post_id: str):
         p = db.get(DBPost, post_id)
         if not p:
             raise HTTPException(status_code=404, detail="Post not found")
-        
+
         # Toggle repost (increment if not reposted, decrement if reposted)
         reposted_status = True  # In a real app, would check user's repost status
         if reposted_status:
             p.reposts_count = (p.reposts_count or 0) + 1
         else:
             p.reposts_count = max(0, (p.reposts_count or 0) - 1)
-            
+
         db.commit(); db.refresh(p)
         return PostOut.from_db(p, db)
 
@@ -438,7 +441,7 @@ def get_comments(post_id: str):
     p = repo_get_post(post_id)
     if not p:
         raise HTTPException(status_code=404, detail="Post not found")
-        
+
     # In a real app, these would be stored in a comments table
     # For now, return dummy data matching format expected by frontend
     comments = [
@@ -455,11 +458,11 @@ def add_comment(post_id: str, comment: CommentIn):
         p = db.get(DBPost, post_id)
         if not p:
             raise HTTPException(status_code=404, detail="Post not found")
-        
+
         # Increment comments count
         p.comments_count = (p.comments_count or 0) + 1
         db.commit()
-        
+
         # In a real app, we would add to a comments table
         # For now, just echo back the comment
         return {"user": comment.user, "text": comment.text}
@@ -475,22 +478,23 @@ def db_diagnostics():
             "connection_test": None,
             "table_counts": {},
         }
-        
+
         # Test basic connection
         with get_session() as db:
             diagnostics["connection_test"] = "success"
-            
-            # Get table counts
-            tables = ["users", "posts", "follows", "conversations", 
+
+            # Get table counts using text() function
+            from sqlalchemy import text
+            tables = ["users", "posts", "follows", "conversations",
                       "conversation_participants", "messages", "notifications"]
-            
+
             for table in tables:
                 try:
-                    count = db.execute(f"SELECT COUNT(*) FROM {table}").scalar()
+                    count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
                     diagnostics["table_counts"][table] = count
                 except Exception as e:
                     diagnostics["table_counts"][table] = f"Error: {str(e)}"
-                    
+
         return diagnostics
     except Exception as e:
         return {

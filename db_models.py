@@ -41,8 +41,8 @@ if DATABASE_URL.startswith("postgres://"):
 
 # Configure SQLAlchemy engine with connection pool settings suitable for cloud deployment
 ENGINE = create_engine(
-    DATABASE_URL, 
-    echo=False, 
+    DATABASE_URL,
+    echo=False,
     future=True,
     pool_pre_ping=True,  # Test connections before using them
     pool_recycle=300,    # Recycle connections every 5 minutes
@@ -174,10 +174,11 @@ def create_db() -> None:
 
 def get_session():
     """Create a new database session with validation and error handling."""
+    from sqlalchemy import text
     session = SessionLocal()
     try:
-        # Validate that the connection is working with a simple query
-        session.execute("SELECT 1")
+        # Validate that the connection is working with a simple query using text()
+        session.execute(text("SELECT 1"))
         return session
     except Exception as e:
         session.close()

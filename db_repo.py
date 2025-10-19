@@ -14,15 +14,15 @@ create_db()
 def create_user(handle: str, display_name: str, bio: str = "") -> User:
     """
     Create a new user with validation to prevent database errors.
-    
+
     Args:
         handle: User's handle (username) - limited to 32 chars
         display_name: User's display name - limited to 100 chars
         bio: User's bio description
-        
+
     Returns:
         The created User object
-        
+
     Raises:
         ValueError: If input validation fails
         Exception: For database errors
@@ -30,13 +30,13 @@ def create_user(handle: str, display_name: str, bio: str = "") -> User:
     # Validate inputs
     if not handle:
         raise ValueError("Handle cannot be empty")
-        
+
     # Ensure lengths are within database limits
     if len(handle) > 32:
         handle = handle[:32]
     if len(display_name) > 100:
         display_name = display_name[:100]
-        
+
     try:
         with get_session() as db:
             u = User(handle=handle, display_name=display_name, bio=bio)
