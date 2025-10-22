@@ -14,6 +14,10 @@ import crud
 from database import engine, get_db
 
 from webhook import router as webhook_router
+from fastapi import Security
+from fastapi.security import HTTPBearer
+from jose import jwt
+import requests, os
 
 
 # Create database tables
@@ -36,6 +40,34 @@ app.add_middleware(
 )
 
 app.include_router(webhook_router, prefix="/admin", tags=["webhook"])
+
+# === Cognito JWT verification setup ===
+COGNITO_REGION = os.getenv("COGNITO_REGION")
+COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID")
+COGNITO_APP_CLIENT_ID = os.getenv("COGNITO_APP_CLIENT_ID")
+
+ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}"
+JWKS_URL = f"{ISSUER}/.well-known/jwks.json"
+JWKS = requests.get(JWKS_URL).json()
+
+auth_scheme = HTTPBearer()
+
+
+def verify_jwt(token=Security(auth_scheme)):
+    try:
+        header = jwt.get_unverified_header(token.credentials)
+        key = next(k for k in JWKS["keys"] if k["kid"] == header["kid"])
+        claims = jwt.decode(
+            token.credentials,
+            key,
+            algorithms=["RS256"],
+            audience=COGNITO_APP_CLIENT_ID,
+            issuer=ISSUER,
+        )
+        return claims
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
+
 
 # ========== UTILITY FUNCTIONS ==========
 
@@ -379,6 +411,12 @@ def update_settings(
     user = get_current_user_from_handle(db, handle)
     crud.update_user_settings(db, user.id, settings_update)
     return {"success": True}
+
+
+# ========== AUTHENTICATION CHECK ==========
+@app.get("/auth/me")
+def get_authenticated_user(user=Depends(verify_jwt)):
+    return {"username": user.get("cognito:username"), "email": user.get("email")}
 
 
 # ========== HEALTH CHECK ==========
