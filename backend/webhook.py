@@ -56,6 +56,3 @@ async def github_webhook(request: Request):
 
     # 202 Accepted: deployment started
     return {"ok": True, "action": "deploy", "branch": "main"}
-
-
-# Small change for testing push webhook
