@@ -194,6 +194,22 @@ def main():
         "Root endpoint OK",
     )
 
+    print("=== A U T H  (JWT) ===")
+
+    TEST_JWT = "<YOUR_JWT_HERE>"
+
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            resp = client.get(
+                f"{BASE_URL}/auth/me", headers={"Authorization": f"Bearer {TEST_JWT}"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            assert_true("username" in data, "JWT auth returned valid user claims")
+            print("   ->", json.dumps(data, indent=2))
+    except Exception as e:
+        assert_true(False, "JWT auth test failed", details=str(e))
+
     print("\n🎉 All integration tests passed")
     print(f"  BASE_URL : {BASE_URL}")
     print(f"  USER_A   : {user_a}")
