@@ -46,7 +46,7 @@ async def github_webhook(request: Request):
         return {"ignored": True, "reason": "not main branch"}
 
     # Kick off deploy script NON-BLOCKING so we return immediately
-    deploy_script = "/opt/tuitter-backend/deploy.sh"
+    deploy_script = "/home/ec2-user/tuitter-backend/deploy.sh"
     try:
         subprocess.Popen(
             [deploy_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
