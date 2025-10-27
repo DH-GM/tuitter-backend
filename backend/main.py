@@ -23,24 +23,6 @@ import requests, os
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Social.vim API",
-    description="Backend API for Social.vim TUI application",
-    version="1.0.0",
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(webhook_router, prefix="/admin", tags=["webhook"])
-
 # === Cognito JWT verification setup ===
 COGNITO_REGION = os.getenv("COGNITO_REGION")
 COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID")
@@ -69,9 +51,24 @@ def verify_jwt(token=Security(auth_scheme)):
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
 
-# Enforce global dependency requiring JWT for all routes
-# App was created earlier; append the dependency now that verify_jwt is defined.
-app.dependencies.append(Depends(verify_jwt))
+# Initialize FastAPI app with global JWT dependency
+app = FastAPI(
+    title="Social.vim API",
+    description="Backend API for Social.vim TUI application",
+    version="1.0.0",
+    dependencies=[Depends(verify_jwt)],
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(webhook_router, prefix="/admin", tags=["webhook"])
 
 
 # ========== UTILITY FUNCTIONS ==========
