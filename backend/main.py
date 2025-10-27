@@ -18,6 +18,7 @@ from fastapi import Security
 from fastapi.security import HTTPBearer
 from jose import jwt
 import requests, os
+from mangum import Mangum
 
 
 # Create database tables
@@ -68,6 +69,8 @@ def verify_jwt(token=Security(auth_scheme)):
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
+
+handler = Mangum(app)
 
 # ========== UTILITY FUNCTIONS ==========
 
