@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, time, json, random, string, os
+import sys, time, json, random, string
 from datetime import datetime, timezone
 import httpx
 
@@ -8,9 +8,6 @@ BASE_URL = "http://3.23.128.245:8000"
 TIMEOUT = 10.0
 RETRIES = 5
 DELAY = 0.8
-
-# --------- JWT Token ----------
-JWT_TOKEN = os.getenv("JWT_TOKEN", "")
 
 
 def rnd_suffix():
@@ -31,15 +28,12 @@ def req(method, path, *, params=None, json_body=None):
     for i in range(RETRIES):
         try:
             with httpx.Client(timeout=TIMEOUT) as client:
-                headers = {"Content-Type": "application/json"}
-                if JWT_TOKEN:
-                    headers["Authorization"] = f"Bearer {JWT_TOKEN}"
                 resp = client.request(
                     method,
                     url,
                     params=params,
                     json=json_body,
-                    headers=headers,
+                    headers={"Content-Type": "application/json"},
                 )
                 resp.raise_for_status()
                 # Some endpoints return plain dict/array; return parsed JSON when possible
@@ -199,6 +193,22 @@ def main():
         root.get("service") == "Social.vim API" and root.get("version") == "1.0.0",
         "Root endpoint OK",
     )
+
+    print("=== A U T H  (JWT) ===")
+
+    TEST_JWT = "<YOUR_JWT_HERE>"
+
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            resp = client.get(
+                f"{BASE_URL}/auth/me", headers={"Authorization": f"Bearer {TEST_JWT}"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            assert_true("username" in data, "JWT auth returned valid user claims")
+            print("   ->", json.dumps(data, indent=2))
+    except Exception as e:
+        assert_true(False, "JWT auth test failed", details=str(e))
 
     print("\n🎉 All integration tests passed")
     print(f"  BASE_URL : {BASE_URL}")
