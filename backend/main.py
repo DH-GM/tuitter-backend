@@ -51,12 +51,11 @@ def verify_jwt(token=Security(auth_scheme)):
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
 
-# Initialize FastAPI app with global JWT dependency
+# Initialize FastAPI app
 app = FastAPI(
     title="Social.vim API",
     description="Backend API for Social.vim TUI application",
     version="1.0.0",
-    dependencies=[Depends(verify_jwt)],
 )
 
 # Add CORS middleware
@@ -119,6 +118,7 @@ def get_current_user_from_handle(
 def get_current_user(
     handle: str = Query(..., description="Username/handle of the current user"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """
     Get current user profile.
@@ -136,6 +136,7 @@ def get_timeline(
     limit: int = Query(50, ge=1, le=100),
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Get timeline posts (recent posts from all users)"""
     posts = crud.get_timeline_posts(db, limit)
@@ -159,6 +160,7 @@ def get_discover(
     limit: int = Query(50, ge=1, le=100),
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Get discover posts (trending/popular posts)"""
     posts = crud.get_discover_posts(db, limit)
@@ -182,6 +184,7 @@ def create_post(
     post_data: schemas.PostCreate,
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Create a new post"""
     user = get_current_user_from_handle(db, handle)
@@ -194,6 +197,7 @@ def like_post(
     post_id: int,
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Toggle like on a post"""
     user = get_current_user_from_handle(db, handle)
@@ -208,6 +212,7 @@ def repost_post(
     post_id: int,
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Toggle repost on a post"""
     user = get_current_user_from_handle(db, handle)
@@ -221,7 +226,7 @@ def repost_post(
 
 
 @app.get("/posts/{post_id}/comments", response_model=List[schemas.CommentResponse])
-def get_comments(post_id: int, db: Session = Depends(get_db)):
+def get_comments(post_id: int, db: Session = Depends(get_db), user=Depends(verify_jwt)):
     """Get all comments for a post"""
     comments = crud.get_comments(db, post_id)
     return [schemas.CommentResponse(user=c.username, text=c.text) for c in comments]
@@ -233,6 +238,7 @@ def add_comment(
     comment_data: schemas.CommentCreate,
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Add a comment to a post"""
     user = get_current_user_from_handle(db, handle)
@@ -247,6 +253,7 @@ def add_comment(
 def get_conversations(
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Get all conversations for the current user"""
     user = get_current_user_from_handle(db, handle)
@@ -281,7 +288,7 @@ def get_conversations(
     "/conversations/{conversation_id}/messages",
     response_model=List[schemas.MessageResponse],
 )
-def get_conversation_messages(conversation_id: int, db: Session = Depends(get_db)):
+def get_conversation_messages(conversation_id: int, db: Session = Depends(get_db), user=Depends(verify_jwt)):
     """Get all messages in a conversation"""
     messages = crud.get_messages_for_conversation(db, conversation_id)
     return [schemas.MessageResponse.from_orm(m) for m in messages]
@@ -294,6 +301,7 @@ def send_message(
     conversation_id: int,
     message_data: schemas.MessageCreate,
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Send a message in a conversation"""
     sender = crud.get_user_by_username(db, message_data.sender_handle)
@@ -308,7 +316,7 @@ def send_message(
 
 @app.post("/dm", response_model=schemas.ConversationResponse)
 def get_or_create_dm(
-    conversation_data: schemas.ConversationCreate, db: Session = Depends(get_db)
+    conversation_data: schemas.ConversationCreate, db: Session = Depends(get_db), user=Depends(verify_jwt)
 ):
     """Get or create a direct message conversation between two users"""
     user_a = crud.get_user_by_username(db, conversation_data.user_a_handle)
@@ -344,6 +352,7 @@ def get_notifications(
     unread: bool = Query(False, description="Get only unread notifications"),
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Get notifications for the current user"""
     user = get_current_user_from_handle(db, handle)
@@ -352,7 +361,7 @@ def get_notifications(
 
 
 @app.post("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int, db: Session = Depends(get_db)):
+def mark_notification_read(notification_id: int, db: Session = Depends(get_db), user=Depends(verify_jwt)):
     """Mark a notification as read"""
     success = crud.mark_notification_read(db, notification_id)
     if not success:
@@ -367,6 +376,7 @@ def mark_notification_read(notification_id: int, db: Session = Depends(get_db)):
 def get_settings(
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Get user settings"""
     user = get_current_user_from_handle(db, handle)
@@ -408,6 +418,7 @@ def update_settings(
     settings_update: schemas.SettingsUpdate,
     handle: str = Query("yourname", description="Current user handle"),
     db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
 ):
     """Update user settings"""
     user = get_current_user_from_handle(db, handle)
@@ -437,7 +448,7 @@ def root():
 
 
 @app.post("/admin/seed-database")
-def seed_database(db: Session = Depends(get_db)):
+def seed_database(db: Session = Depends(get_db), user=Depends(verify_jwt)):
     """
     Seed the database with demo data.
     Call this once after deployment to populate initial data.
