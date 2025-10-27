@@ -69,6 +69,11 @@ def verify_jwt(token=Security(auth_scheme)):
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
 
+# Enforce global dependency requiring JWT for all routes
+# App was created earlier; append the dependency now that verify_jwt is defined.
+app.dependencies.append(Depends(verify_jwt))
+
+
 # ========== UTILITY FUNCTIONS ==========
 
 
