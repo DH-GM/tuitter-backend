@@ -22,7 +22,7 @@ from mangum import Mangum
 
 
 # Create database tables
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
 app = FastAPI(

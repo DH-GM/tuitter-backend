@@ -1,2 +1,2 @@
 #!/bin/sh
-python init_db.py
+python backend/init_db.py
