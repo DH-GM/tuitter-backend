@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 import httpx
 
 # --------- Config ----------
-BASE_URL = "https://voqbyhcnqe.execute-api.us-east-2.amazonaws.com" # API Gateway URL
+BASE_URL = "https://voqbyhcnqe.execute-api.us-east-2.amazonaws.com"  # API Gateway URL
 TIMEOUT = 10.0
 RETRIES = 5
 DELAY = 0.8
-TEST_JWT = "<TEST_JWT_HERE>""
+TEST_JWT = "<TEST_JWT_HERE>"
 
 
 def rnd_suffix():
