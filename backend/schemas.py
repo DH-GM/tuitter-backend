@@ -20,10 +20,10 @@ class UserResponse(UserBase):
     followers: int
     following: int
     posts_count: int
-    
+
     class Config:
         from_attributes = True
-    
+
     @classmethod
     def from_orm(cls, user):
         return cls(
@@ -40,8 +40,14 @@ class UserResponse(UserBase):
 
 
 # Post schemas
+class AttachmentBase(BaseModel):
+    type: str
+    content: Optional[str] = None
+    path: Optional[str] = None
+
 class PostCreate(BaseModel):
     content: str
+    attachments: Optional[List[AttachmentBase]] = None
 
 
 class PostResponse(BaseModel):
@@ -60,10 +66,11 @@ class PostResponse(BaseModel):
     comments_count: int
     liked_by_user: bool = False
     reposted_by_user: bool = False
-    
+    attachments: Optional[List[AttachmentBase]] = None
+
     class Config:
         from_attributes = True
-    
+
     @classmethod
     def from_orm(cls, post, user_id: Optional[int] = None, liked_by_user: bool = False, reposted_by_user: bool = False):
         return cls(
@@ -81,7 +88,8 @@ class PostResponse(BaseModel):
             comments=post.comments_count,
             comments_count=post.comments_count,
             liked_by_user=liked_by_user,
-            reposted_by_user=reposted_by_user
+            reposted_by_user=reposted_by_user,
+            attachments=getattr(post, 'attachments', None)
         )
 
 
@@ -93,7 +101,7 @@ class CommentCreate(BaseModel):
 class CommentResponse(BaseModel):
     user: str
     text: str
-    
+
     class Config:
         from_attributes = True
 
@@ -111,10 +119,10 @@ class MessageResponse(BaseModel):
     timestamp: datetime
     created_at: datetime
     is_read: bool
-    
+
     class Config:
         from_attributes = True
-    
+
     @classmethod
     def from_orm(cls, message):
         return cls(
@@ -139,7 +147,7 @@ class ConversationResponse(BaseModel):
     last_message_preview: str
     last_message_at: datetime
     unread: bool = False
-    
+
     class Config:
         from_attributes = True
 
@@ -155,10 +163,10 @@ class NotificationResponse(BaseModel):
     created_at: datetime
     read: bool
     post_id: Optional[int] = None
-    
+
     class Config:
         from_attributes = True
-    
+
     @classmethod
     def from_orm(cls, notification):
         return cls(
@@ -197,7 +205,7 @@ class SettingsResponse(BaseModel):
     google_connected: bool
     discord_connected: bool
     ascii_pic: str
-    
+
     class Config:
         from_attributes = True
 

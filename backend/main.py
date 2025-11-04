@@ -186,7 +186,24 @@ def create_post(
 ):
     """Create a new post"""
     user = get_current_user_from_handle(db, handle)
-    post = crud.create_post(db, user.id, user.username, post_data.content)
+
+    # Process attachments if present
+    attachments = None
+    if post_data.attachments:
+        attachments = [att.dict() for att in post_data.attachments]
+
+    post = crud.create_post(
+        db=db,
+        user_id=user.id,
+        username=user.username,
+        content=post_data.content,
+        attachments=attachments
+    )
+
+    # Ensure attachments are set on the post object
+    if attachments:
+        post.attachments = attachments
+
     return schemas.PostResponse.from_orm(post, user.id, False, False)
 
 

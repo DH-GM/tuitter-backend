@@ -4,12 +4,27 @@ SQLAlchemy ORM models
 from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import TypeDecorator, VARCHAR
 from database import Base
+import json
+
+class JSONString(TypeDecorator):
+    impl = VARCHAR(16384)
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return json.loads(value)
 
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     display_name = Column(String(100), nullable=False)
@@ -19,7 +34,7 @@ class User(Base):
     posts_count = Column(Integer, default=0)
     ascii_pic = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -27,7 +42,7 @@ class User(Base):
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     email_notifications = Column(Boolean, default=True)
@@ -38,14 +53,14 @@ class UserSettings(Base):
     google_connected = Column(Boolean, default=False)
     discord_connected = Column(Boolean, default=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
+
     # Relationships
     user = relationship("User", back_populates="settings")
 
 
 class Post(Base):
     __tablename__ = "posts"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     author_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     author_handle = Column(String(50), nullable=False)
@@ -54,7 +69,8 @@ class Post(Base):
     reposts_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    
+    attachments = Column(JSONString)  # Store attachments as JSON string, max ~16KB
+
     # Relationships
     author = relationship("User", back_populates="posts")
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
@@ -63,57 +79,57 @@ class Post(Base):
 
 class PostInteraction(Base):
     __tablename__ = "post_interactions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     interaction_type = Column(String(20), nullable=False)  # 'like' or 'repost'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     __table_args__ = (
         UniqueConstraint('post_id', 'user_id', 'interaction_type', name='uix_post_user_interaction'),
     )
-    
+
     # Relationships
     post = relationship("Post", back_populates="interactions")
 
 
 class Comment(Base):
     __tablename__ = "comments"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     username = Column(String(50), nullable=False)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Relationships
     post = relationship("Post", back_populates="comments")
 
 
 class Conversation(Base):
     __tablename__ = "conversations"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     participant_a_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     participant_b_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     last_message_preview = Column(Text, default="")
     last_message_at = Column(DateTime(timezone=True), server_default=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     __table_args__ = (
         UniqueConstraint('participant_a_id', 'participant_b_id', name='uix_participants'),
         CheckConstraint('participant_a_id < participant_b_id', name='check_participant_order'),
     )
-    
+
     # Relationships
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
 
 
 class Message(Base):
     __tablename__ = "messages"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -121,14 +137,14 @@ class Message(Base):
     content = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    
+
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
 
 
 class Notification(Base):
     __tablename__ = "notifications"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     type = Column(String(20), nullable=False)  # 'mention', 'like', 'repost', 'follow', 'comment'
