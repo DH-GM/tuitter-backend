@@ -7,6 +7,87 @@ from typing import List, Optional
 import models
 import schemas
 
+def get_conversations_for_user(db: Session, user_id: int):
+    """Get all conversations for a user using the junction table"""
+    return db.query(models.Conversation).join(
+        models.conversation_participants,
+        models.Conversation.id == models.conversation_participants.c.conversation_id
+    ).filter(
+        models.conversation_participants.c.user_id == user_id
+    ).all()
+
+
+def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
+    """Get or create a conversation between two users"""
+    # Find existing conversation between these two users
+    # This is more complex with many-to-many, so we need to find conversations
+    # where both users are participants
+    
+    # Subquery to find conversations with user_a
+    conv_with_a = db.query(models.conversation_participants.c.conversation_id).filter(
+        models.conversation_participants.c.user_id == user_a_id
+    ).subquery()
+    
+    # Subquery to find conversations with user_b
+    conv_with_b = db.query(models.conversation_participants.c.conversation_id).filter(
+        models.conversation_participants.c.user_id == user_b_id
+    ).subquery()
+    
+    # Find conversations that have both users
+    existing_conv = db.query(models.Conversation).filter(
+        and_(
+            models.Conversation.id.in_(conv_with_a),
+            models.Conversation.id.in_(conv_with_b)
+        )
+    ).first()
+    
+    if existing_conv:
+        return existing_conv
+    
+    # Create new conversation
+    new_conv = models.Conversation()
+    db.add(new_conv)
+    db.flush()  # Get the ID
+    
+    # Add both participants to the junction table
+    db.execute(
+        models.conversation_participants.insert().values([
+            {"conversation_id": new_conv.id, "user_id": user_a_id},
+            {"conversation_id": new_conv.id, "user_id": user_b_id}
+        ])
+    )
+    db.commit()
+    db.refresh(new_conv)
+    
+    return new_conv
+
+
+def get_messages_for_conversation(db: Session, conversation_id: int):
+    """Get all messages in a conversation, ordered by timestamp"""
+    return db.query(models.Message).filter(
+        models.Message.conversation_id == conversation_id
+    ).order_by(models.Message.timestamp.asc()).all()
+
+
+def create_message(db: Session, conversation_id: int, sender_id: int, sender_handle: str, content: str):
+    """Create a new message in a conversation"""
+    message = models.Message(
+        conversation_id=conversation_id,
+        sender_id=sender_id,
+        sender_handle=sender_handle,
+        content=content
+    )
+    db.add(message)
+    
+    # Update conversation's last message (if you add these columns to the conversations table)
+    # conversation = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
+    # if conversation:
+    #     conversation.last_message_preview = content[:100]
+    #     conversation.last_message_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(message)
+    return message
 
 # ========== USER OPERATIONS ==========
 
@@ -162,77 +243,9 @@ def add_comment(db: Session, post_id: int, user_id: int, username: str, text: st
     return comment
 
 
-# ========== CONVERSATION OPERATIONS ==========
-
-def get_conversations_for_user(db: Session, user_id: int) -> List[models.Conversation]:
-    """Get all conversations for a user"""
-    return db.query(models.Conversation).filter(
-        or_(
-            models.Conversation.participant_a_id == user_id,
-            models.Conversation.participant_b_id == user_id
-        )
-    ).order_by(desc(models.Conversation.last_message_at)).all()
-
-
 def get_conversation_by_id(db: Session, conversation_id: int) -> Optional[models.Conversation]:
     """Get a conversation by ID"""
     return db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
-
-
-def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int) -> models.Conversation:
-    """Get or create a conversation between two users"""
-    # Ensure participant_a_id < participant_b_id
-    min_id, max_id = min(user_a_id, user_b_id), max(user_a_id, user_b_id)
-    
-    # Check if conversation exists
-    conversation = db.query(models.Conversation).filter(
-        models.Conversation.participant_a_id == min_id,
-        models.Conversation.participant_b_id == max_id
-    ).first()
-    
-    if conversation:
-        return conversation
-    
-    # Create new conversation
-    conversation = models.Conversation(
-        participant_a_id=min_id,
-        participant_b_id=max_id
-    )
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
-    return conversation
-
-
-# ========== MESSAGE OPERATIONS ==========
-
-def get_messages_for_conversation(db: Session, conversation_id: int) -> List[models.Message]:
-    """Get all messages for a conversation"""
-    return db.query(models.Message).filter(
-        models.Message.conversation_id == conversation_id
-    ).order_by(models.Message.created_at).all()
-
-
-def create_message(db: Session, conversation_id: int, sender_id: int, sender_handle: str, content: str) -> models.Message:
-    """Create a new message in a conversation"""
-    message = models.Message(
-        conversation_id=conversation_id,
-        sender_id=sender_id,
-        sender_handle=sender_handle,
-        content=content,
-        is_read=False
-    )
-    db.add(message)
-    
-    # Update conversation's last message
-    conversation = get_conversation_by_id(db, conversation_id)
-    if conversation:
-        conversation.last_message_preview = content[:50] + "..." if len(content) > 50 else content
-        conversation.last_message_at = message.created_at
-    
-    db.commit()
-    db.refresh(message)
-    return message
 
 
 # ========== NOTIFICATION OPERATIONS ==========

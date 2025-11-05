@@ -5,6 +5,7 @@ FastAPI backend for Social.vim application
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import desc  # ✅ Add this import
 from typing import List, Optional
 import uvicorn
 
@@ -250,7 +251,7 @@ def add_comment(
 
 @app.get("/conversations", response_model=List[schemas.ConversationResponse])
 def get_conversations(
-    handle: str = Query("yourname", description="Current user handle"),
+    handle: str = Query(..., description="Username/handle of the current user"),
     db: Session = Depends(get_db),
     user=Depends(verify_jwt),
 ):
@@ -260,22 +261,23 @@ def get_conversations(
 
     result = []
     for conv in conversations:
-        # Get participant handles
-        user_a = crud.get_user_by_id(db, conv.participant_a_id)
-        user_b = crud.get_user_by_id(db, conv.participant_b_id)
-
-        handles = []
-        if user_a:
-            handles.append(user_a.username)
-        if user_b:
-            handles.append(user_b.username)
-
+        # Get all participant handles (excluding current user)
+        participant_handles = [p.username for p in conv.participants if p.id != user.id]
+        
+        # Get last message for preview
+        last_message = db.query(models.Message).filter(
+            models.Message.conversation_id == conv.id
+        ).order_by(desc(models.Message.timestamp)).first()
+        
+        last_message_preview = last_message.content[:100] if last_message else ""
+        last_message_at = last_message.timestamp if last_message else conv.created_at
+        
         result.append(
             schemas.ConversationResponse(
                 id=conv.id,
-                participant_handles=handles,
-                last_message_preview=conv.last_message_preview,
-                last_message_at=conv.last_message_at,
+                participant_handles=participant_handles,
+                last_message_preview=last_message_preview,
+                last_message_at=last_message_at,
                 unread=False,  # TODO: implement unread logic
             )
         )
@@ -315,7 +317,9 @@ def send_message(
 
 @app.post("/dm", response_model=schemas.ConversationResponse)
 def get_or_create_dm(
-    conversation_data: schemas.ConversationCreate, db: Session = Depends(get_db), user=Depends(verify_jwt)
+    conversation_data: schemas.ConversationCreate, 
+    db: Session = Depends(get_db), 
+    user=Depends(verify_jwt)
 ):
     """Get or create a direct message conversation between two users"""
     user_a = crud.get_user_by_username(db, conversation_data.user_a_handle)
@@ -334,11 +338,19 @@ def get_or_create_dm(
 
     conversation = crud.get_or_create_conversation(db, user_a.id, user_b.id)
 
+    # ✅ Get last message for preview (same pattern as /conversations endpoint)
+    last_message = db.query(models.Message).filter(
+        models.Message.conversation_id == conversation.id
+    ).order_by(desc(models.Message.timestamp)).first()
+    
+    last_message_preview = last_message.content[:100] if last_message else ""
+    last_message_at = last_message.timestamp if last_message else conversation.created_at
+
     return schemas.ConversationResponse(
         id=conversation.id,
         participant_handles=[user_a.username, user_b.username],
-        last_message_preview=conversation.last_message_preview,
-        last_message_at=conversation.last_message_at,
+        last_message_preview=last_message_preview,
+        last_message_at=last_message_at,
         unread=False,
     )
 
