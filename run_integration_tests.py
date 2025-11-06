@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 import httpx
 
 # --------- Config ----------
-BASE_URL = "http://3.23.128.245:8000"
+BASE_URL = "https://voqbyhcnqe.execute-api.us-east-2.amazonaws.com"  # API Gateway URL
 TIMEOUT = 10.0
 RETRIES = 5
 DELAY = 0.8
-TEST_JWT = "<TOKEN HERE>"
+TEST_JWT = "<TEST_JWT_HERE>"
+
 
 def rnd_suffix():
     return f"{int(time.time() * 1000)}{random.randint(1000, 9999)}"
@@ -100,25 +101,45 @@ def main():
     print("=== P O S T S  (Create/Read/Like/Repost/Comment) ===")
     post_content = f"Hello from {user_a} at {datetime.now(timezone.utc).isoformat()}"
     post = req(
-        "POST", "/posts", params={"handle": user_a}, json_body={"content": post_content}, authenticated=True
+        "POST",
+        "/posts",
+        params={"handle": user_a},
+        json_body={"content": post_content},
+        authenticated=True,
     )
     post_id = post.get("id")
     assert_true(bool(post_id), f"Created post (id={post_id})")
 
-    tl = req("GET", "/timeline", params={"handle": user_a, "limit": 10}, authenticated=True)
+    tl = req(
+        "GET", "/timeline", params={"handle": user_a, "limit": 10}, authenticated=True
+    )
     assert_true(isinstance(tl, list), "Timeline returns array")
     assert_true(
         any(p.get("id") == post_id for p in tl), "Timeline contains created post"
     )
 
-    like1 = req("POST", f"/posts/{post_id}/like", params={"handle": user_b}, authenticated=True)
+    like1 = req(
+        "POST", f"/posts/{post_id}/like", params={"handle": user_b}, authenticated=True
+    )
     assert_true(like1.get("success") is True, "USER_B liked post")
-    like2 = req("POST", f"/posts/{post_id}/like", params={"handle": user_b}, authenticated=True)
+    like2 = req(
+        "POST", f"/posts/{post_id}/like", params={"handle": user_b}, authenticated=True
+    )
     assert_true(like2.get("success") is True, "USER_B unliked post (toggle)")
 
-    rp1 = req("POST", f"/posts/{post_id}/repost", params={"handle": user_b}, authenticated=True)
+    rp1 = req(
+        "POST",
+        f"/posts/{post_id}/repost",
+        params={"handle": user_b},
+        authenticated=True,
+    )
     assert_true(rp1.get("success") is True, "USER_B reposted post")
-    rp2 = req("POST", f"/posts/{post_id}/repost", params={"handle": user_b}, authenticated=True)
+    rp2 = req(
+        "POST",
+        f"/posts/{post_id}/repost",
+        params={"handle": user_b},
+        authenticated=True,
+    )
     assert_true(rp2.get("success") is True, "USER_B un-reposted (toggle)")
 
     comment_text = f"Nice post from {user_b}!"
@@ -138,12 +159,17 @@ def main():
     )
 
     print("=== D I S C O V E R  (R) ===")
-    disc = req("GET", "/discover", params={"handle": user_a, "limit": 10}, authenticated=True)
+    disc = req(
+        "GET", "/discover", params={"handle": user_a, "limit": 10}, authenticated=True
+    )
     assert_true(isinstance(disc, list), "Discover returns array")
 
     print("=== C O N V E R S A T I O N S  &  M E S S A G E S ===")
     dm = req(
-        "POST", "/dm", json_body={"user_a_handle": user_a, "user_b_handle": user_b}, authenticated=True
+        "POST",
+        "/dm",
+        json_body={"user_a_handle": user_a, "user_b_handle": user_b},
+        authenticated=True,
     )
     conv_id = dm.get("id")
     assert_true(bool(conv_id), f"Created/loaded DM (conversation_id={conv_id})")
@@ -178,7 +204,10 @@ def main():
 
     print("=== N O T I F I C A T I O N S  (R/U) ===")
     notifs_a_unread = req(
-        "GET", "/notifications", params={"handle": user_a, "unread": True}, authenticated=True
+        "GET",
+        "/notifications",
+        params={"handle": user_a, "unread": True},
+        authenticated=True,
     )
     assert_true(isinstance(notifs_a_unread, list), "Notifications array (A)")
     if notifs_a_unread:
@@ -187,7 +216,10 @@ def main():
         assert_true(mr.get("success") is True, "Marked one notification read (A)")
 
     notifs_b_unread = req(
-        "GET", "/notifications", params={"handle": user_b, "unread": True}, authenticated=True
+        "GET",
+        "/notifications",
+        params={"handle": user_b, "unread": True},
+        authenticated=True,
     )
     assert_true(isinstance(notifs_b_unread, list), "Notifications array (B)")
     if notifs_b_unread:

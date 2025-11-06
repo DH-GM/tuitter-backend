@@ -6,6 +6,7 @@ from sqlalchemy import or_, and_, desc
 from typing import List, Optional
 import models
 import schemas
+import json
 
 def get_conversations_for_user(db: Session, user_id: int):
     """Get all conversations for a user using the junction table"""
@@ -22,17 +23,17 @@ def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
     # Find existing conversation between these two users
     # This is more complex with many-to-many, so we need to find conversations
     # where both users are participants
-    
+
     # Subquery to find conversations with user_a
     conv_with_a = db.query(models.conversation_participants.c.conversation_id).filter(
         models.conversation_participants.c.user_id == user_a_id
     ).subquery()
-    
+
     # Subquery to find conversations with user_b
     conv_with_b = db.query(models.conversation_participants.c.conversation_id).filter(
         models.conversation_participants.c.user_id == user_b_id
     ).subquery()
-    
+
     # Find conversations that have both users
     existing_conv = db.query(models.Conversation).filter(
         and_(
@@ -40,15 +41,15 @@ def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
             models.Conversation.id.in_(conv_with_b)
         )
     ).first()
-    
+
     if existing_conv:
         return existing_conv
-    
+
     # Create new conversation
     new_conv = models.Conversation()
     db.add(new_conv)
     db.flush()  # Get the ID
-    
+
     # Add both participants to the junction table
     db.execute(
         models.conversation_participants.insert().values([
@@ -58,7 +59,7 @@ def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
     )
     db.commit()
     db.refresh(new_conv)
-    
+
     return new_conv
 
 
@@ -78,13 +79,13 @@ def create_message(db: Session, conversation_id: int, sender_id: int, sender_han
         content=content
     )
     db.add(message)
-    
+
     # Update conversation's last message (if you add these columns to the conversations table)
     # conversation = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
     # if conversation:
     #     conversation.last_message_preview = content[:100]
     #     conversation.last_message_at = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(message)
     return message
@@ -116,23 +117,30 @@ def get_discover_posts(db: Session, limit: int = 50) -> List[models.Post]:
     ).limit(limit).all()
 
 
-def create_post(db: Session, user_id: int, username: str, content: str) -> models.Post:
+def create_post(db: Session, user_id: int, username: str, content: str, attachments: Optional[List[dict]] = None) -> models.Post:
     """Create a new post"""
+    # Validate attachment size before creating post
+    if attachments:
+        serialized = json.dumps(attachments)
+        if len(serialized) > 16384:
+            raise ValueError("Attachments exceed maximum size of 16384 characters")
+
     post = models.Post(
         author_id=user_id,
         author_handle=username,
-        content=content
+        content=content,
+        attachments=attachments  # JSONString type will handle serialization
     )
     db.add(post)
     db.commit()
     db.refresh(post)
-    
+
     # Update user's posts count
     user = get_user_by_id(db, user_id)
     if user:
         user.posts_count += 1
         db.commit()
-    
+
     return post
 
 
@@ -157,9 +165,9 @@ def toggle_like(db: Session, post_id: int, user_id: int) -> bool:
     post = get_post_by_id(db, post_id)
     if not post:
         return False
-    
+
     existing = get_user_interaction(db, post_id, user_id, "like")
-    
+
     if existing:
         # Unlike
         db.delete(existing)
@@ -173,7 +181,7 @@ def toggle_like(db: Session, post_id: int, user_id: int) -> bool:
         )
         db.add(interaction)
         post.likes_count += 1
-    
+
     db.commit()
     return True
 
@@ -183,9 +191,9 @@ def toggle_repost(db: Session, post_id: int, user_id: int) -> bool:
     post = get_post_by_id(db, post_id)
     if not post:
         return False
-    
+
     existing = get_user_interaction(db, post_id, user_id, "repost")
-    
+
     if existing:
         # Unrepost
         db.delete(existing)
@@ -199,7 +207,7 @@ def toggle_repost(db: Session, post_id: int, user_id: int) -> bool:
         )
         db.add(interaction)
         post.reposts_count += 1
-    
+
     db.commit()
     return True
 
@@ -232,31 +240,30 @@ def add_comment(db: Session, post_id: int, user_id: int, username: str, text: st
         text=text
     )
     db.add(comment)
-    
+
     # Update post comments count
     post = get_post_by_id(db, post_id)
     if post:
         post.comments_count += 1
-    
+
     db.commit()
     db.refresh(comment)
     return comment
 
 
+# ========== CONVERSATION OPERATIONS ==========
+
 def get_conversation_by_id(db: Session, conversation_id: int) -> Optional[models.Conversation]:
     """Get a conversation by ID"""
     return db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
 
-
-# ========== NOTIFICATION OPERATIONS ==========
-
 def get_notifications_for_user(db: Session, user_id: int, unread_only: bool = False) -> List[models.Notification]:
     """Get notifications for a user"""
     query = db.query(models.Notification).filter(models.Notification.user_id == user_id)
-    
+
     if unread_only:
         query = query.filter(models.Notification.read == False)
-    
+
     return query.order_by(desc(models.Notification.created_at)).all()
 
 
@@ -265,7 +272,7 @@ def mark_notification_read(db: Session, notification_id: int) -> bool:
     notification = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
     if not notification:
         return False
-    
+
     notification.read = True
     db.commit()
     return True
@@ -285,10 +292,10 @@ def update_user_settings(db: Session, user_id: int, settings_update: schemas.Set
         # Create default settings if they don't exist
         settings = models.UserSettings(user_id=user_id)
         db.add(settings)
-    
+
     # Update settings fields
     update_data = settings_update.model_dump(exclude_unset=True)
-    
+
     # Handle user profile updates separately
     if 'username' in update_data or 'display_name' in update_data or 'bio' in update_data or 'ascii_pic' in update_data:
         user = get_user_by_id(db, user_id)
@@ -301,12 +308,12 @@ def update_user_settings(db: Session, user_id: int, settings_update: schemas.Set
                 user.bio = update_data.pop('bio')
             if 'ascii_pic' in update_data:
                 user.ascii_pic = update_data.pop('ascii_pic')
-    
+
     # Update remaining settings
     for key, value in update_data.items():
         if hasattr(settings, key):
             setattr(settings, key, value)
-    
+
     db.commit()
     db.refresh(settings)
     return settings

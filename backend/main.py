@@ -5,7 +5,7 @@ FastAPI backend for Social.vim application
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import desc  # ✅ Add this import
+from sqlalchemy import desc
 from typing import List, Optional
 import uvicorn
 
@@ -20,9 +20,11 @@ from fastapi.security import HTTPBearer
 from jose import jwt
 import requests, os
 
+from mangum import Mangum
+
 
 # Create database tables
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -30,6 +32,8 @@ app = FastAPI(
     description="Backend API for Social.vim TUI application",
     version="1.0.0",
 )
+
+handler = Mangum(app)
 
 # Add CORS middleware
 app.add_middleware(
@@ -263,15 +267,15 @@ def get_conversations(
     for conv in conversations:
         # Get all participant handles (excluding current user)
         participant_handles = [p.username for p in conv.participants if p.id != user.id]
-        
+
         # Get last message for preview
         last_message = db.query(models.Message).filter(
             models.Message.conversation_id == conv.id
         ).order_by(desc(models.Message.timestamp)).first()
-        
+
         last_message_preview = last_message.content[:100] if last_message else ""
         last_message_at = last_message.timestamp if last_message else conv.created_at
-        
+
         result.append(
             schemas.ConversationResponse(
                 id=conv.id,
@@ -317,8 +321,8 @@ def send_message(
 
 @app.post("/dm", response_model=schemas.ConversationResponse)
 def get_or_create_dm(
-    conversation_data: schemas.ConversationCreate, 
-    db: Session = Depends(get_db), 
+    conversation_data: schemas.ConversationCreate,
+    db: Session = Depends(get_db),
     user=Depends(verify_jwt)
 ):
     """Get or create a direct message conversation between two users"""
@@ -342,7 +346,7 @@ def get_or_create_dm(
     last_message = db.query(models.Message).filter(
         models.Message.conversation_id == conversation.id
     ).order_by(desc(models.Message.timestamp)).first()
-    
+
     last_message_preview = last_message.content[:100] if last_message else ""
     last_message_at = last_message.timestamp if last_message else conversation.created_at
 

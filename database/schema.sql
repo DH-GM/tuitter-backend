@@ -41,6 +41,8 @@ CREATE TABLE posts (
     author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     author_handle VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
+    -- Attachments stored as text (VARCHAR(16384)) to match existing model
+    attachments VARCHAR(16384) DEFAULT NULL,
     likes_count INTEGER DEFAULT 0,
     reposts_count INTEGER DEFAULT 0,
     comments_count INTEGER DEFAULT 0,
