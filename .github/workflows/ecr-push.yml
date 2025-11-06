@@ -7,20 +7,24 @@ on:
 jobs:
   push:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
-      - uses: docker/build-push-action@v6
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfile
           push: true
-          tags: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:latest
+          tags: 390402531466.dkr.ecr.us-east-2.amazonaws.com/tuitter-endpoint-container:latest
           provenance: false
