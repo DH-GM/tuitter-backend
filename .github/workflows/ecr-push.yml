@@ -28,3 +28,10 @@ jobs:
           push: true
           tags: 390402531466.dkr.ecr.us-east-2.amazonaws.com/tuitter-endpoint-container:latest
           provenance: false
+
+      - name: Update Lambda image
+        run: |
+          aws lambda update-function-code \
+            --function-name tuitter-endpoint-fastapi-lambda \
+            --image-uri 390402531466.dkr.ecr.us-east-2.amazonaws.com/tuitter-endpoint-container:latest \
+            --region us-east-2
