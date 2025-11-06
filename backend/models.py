@@ -1,7 +1,7 @@
 """
 SQLAlchemy ORM models
 """
-from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, CheckConstraint, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, CheckConstraint, UniqueConstraint, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import TypeDecorator, VARCHAR
@@ -21,6 +21,13 @@ class JSONString(TypeDecorator):
             return None
         return json.loads(value)
 
+conversation_participants = Table(
+    'conversation_participants',
+    Base.metadata,
+    Column('conversation_id', Integer, ForeignKey('conversations.id', ondelete='CASCADE'), primary_key=True),
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -38,13 +45,21 @@ class User(Base):
     # Relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    conversations = relationship(
+        "Conversation",
+        secondary=conversation_participants,
+        back_populates="participants"
+    )
+    messages = relationship("Message", back_populates="sender")
+    notifications = relationship("Notification", foreign_keys="[Notification.user_id]", cascade="all, delete-orphan")
+    triggered_notifications = relationship("Notification", foreign_keys="[Notification.actor_id]", cascade="all, delete-orphan")
 
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     email_notifications = Column(Boolean, default=True)
     show_online_status = Column(Boolean, default=True)
     private_account = Column(Boolean, default=False)
@@ -52,7 +67,7 @@ class UserSettings(Base):
     gitlab_connected = Column(Boolean, default=False)
     google_connected = Column(Boolean, default=False)
     discord_connected = Column(Boolean, default=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
     # Relationships
     user = relationship("User", back_populates="settings")
@@ -112,18 +127,14 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(Integer, primary_key=True, index=True)
-    participant_a_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    participant_b_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    last_message_preview = Column(Text, default="")
-    last_message_at = Column(DateTime(timezone=True), server_default=func.now())
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint('participant_a_id', 'participant_b_id', name='uix_participants'),
-        CheckConstraint('participant_a_id < participant_b_id', name='check_participant_order'),
-    )
-
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    
     # Relationships
+    participants = relationship(
+        "User",
+        secondary=conversation_participants,
+        back_populates="conversations"
+    )
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
 
 
@@ -131,15 +142,16 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
-    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    sender_handle = Column(String(50), nullable=False)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_handle = Column(String, nullable=False)  # Denormalized for performance
     content = Column(Text, nullable=False)
+    timestamp = Column(DateTime, server_default=func.current_timestamp())
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
+    sender = relationship("User", back_populates="messages")
 
 
 class Notification(Base):
@@ -155,3 +167,7 @@ class Notification(Base):
     read = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], back_populates="notifications")
+    actor = relationship("User", foreign_keys=[actor_id], back_populates="triggered_notifications")
+    post = relationship("Post")
