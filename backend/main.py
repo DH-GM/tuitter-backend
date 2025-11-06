@@ -66,12 +66,24 @@ def verify_jwt(token=Security(auth_scheme)):
     try:
         header = jwt.get_unverified_header(token.credentials)
         key = next(k for k in JWKS["keys"] if k["kid"] == header["kid"])
+        # NOTE: Cognito id_tokens include an `at_hash` claim when an
+        # access_token was issued alongside the id_token. The python-jose
+        # library will try to validate `at_hash` against a provided
+        # access_token value; since our API accepts only a single
+        # Authorization: Bearer <token> header (we send id_token), there is
+        # no access_token to compare against and jose raises a JWTClaimsError
+        # "No access_token provided to compare against at_hash claim.".
+        #
+        # To keep the backend minimal and accept id_tokens directly from the
+        # TUI, disable at_hash verification. This avoids requiring the
+        # client to send both tokens in the request.
         claims = jwt.decode(
             token.credentials,
             key,
             algorithms=["RS256"],
             audience=COGNITO_APP_CLIENT_ID,
             issuer=ISSUER,
+            options={"verify_at_hash": False},
         )
         return claims
     except Exception as e:
