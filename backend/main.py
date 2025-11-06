@@ -192,7 +192,17 @@ def create_post(
 ):
     """Create a new post"""
     user = get_current_user_from_handle(db, handle)
-    post = crud.create_post(db, user.id, user.username, post_data.content)
+    # Forward attachments from the PostCreate schema to CRUD if present.
+    attachments = None
+    if getattr(post_data, 'attachments', None):
+        try:
+            # Pydantic v2 uses model_dump(); older versions use dict()
+            attachments = [a.model_dump() if hasattr(a, 'model_dump') else a.dict() for a in post_data.attachments]
+        except Exception:
+            # Fallback: use raw list (may already be plain dicts)
+            attachments = post_data.attachments
+
+    post = crud.create_post(db, user.id, user.username, post_data.content, attachments=attachments)
     return schemas.PostResponse.from_orm(post, user.id, False, False)
 
 
