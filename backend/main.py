@@ -20,9 +20,11 @@ from fastapi.security import HTTPBearer
 from jose import jwt
 import requests, os
 
+from mangum import Mangum
+
 
 # Create database tables
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -30,6 +32,8 @@ app = FastAPI(
     description="Backend API for Social.vim TUI application",
     version="1.0.0",
 )
+
+handler = Mangum(app)
 
 # Add CORS middleware
 app.add_middleware(
