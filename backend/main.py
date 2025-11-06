@@ -19,6 +19,10 @@ from fastapi import Security
 from fastapi.security import HTTPBearer
 from jose import jwt
 import requests, os
+import logging
+
+# Module logger for backend
+logger = logging.getLogger("tuitter.backend")
 
 from mangum import Mangum
 
@@ -71,6 +75,29 @@ def verify_jwt(token=Security(auth_scheme)):
         )
         return claims
     except Exception as e:
+        # Emit a short debug log so CloudWatch captures the exact verification
+        # failure (kid/aud/issuer mismatch, expired token, etc.). This log is
+        # intentionally minimal and avoids printing the full token.
+        try:
+            kid = None
+            try:
+                kid = jwt.get_unverified_header(token.credentials).get("kid")
+            except Exception:
+                pass
+            logger.exception(
+                "JWT verification failed (kid=%s, issuer=%s, aud=%s): %s",
+                kid,
+                ISSUER,
+                COGNITO_APP_CLIENT_ID,
+                e,
+            )
+        except Exception:
+            # Best-effort logging; avoid crashing the handler when logging fails
+            try:
+                print("JWT verification failed; logging attempt also failed.")
+            except Exception:
+                pass
+
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
 
