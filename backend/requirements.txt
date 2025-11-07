@@ -4,6 +4,7 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 mangum==0.15.0
+python-jose
 
 # For AWS Cognito JWT validation
 requests==2.31.0

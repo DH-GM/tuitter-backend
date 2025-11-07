@@ -117,7 +117,6 @@ class MessageResponse(BaseModel):
     sender_id: int
     content: str
     created_at: datetime
-    created_at: datetime
     is_read: bool
 
     class Config:
@@ -129,7 +128,6 @@ class MessageResponse(BaseModel):
             id=message.id,
             sender_id=message.sender_id,
             content=message.content,
-            created_at=message.created_at,
             created_at=message.created_at,
             is_read=message.is_read
         )
@@ -159,7 +157,6 @@ class NotificationResponse(BaseModel):
     actor: str
     username: str
     content: str
-    timestamp: datetime
     created_at: datetime
     read: bool
     post_id: Optional[int] = None
@@ -175,7 +172,6 @@ class NotificationResponse(BaseModel):
             actor=notification.actor_handle,
             username=notification.actor_handle,
             content=notification.content,
-            timestamp=notification.created_at,
             created_at=notification.created_at,
             read=notification.read,
             post_id=notification.post_id

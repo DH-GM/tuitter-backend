@@ -19,9 +19,9 @@ from fastapi import Security
 from fastapi.security import HTTPBearer
 from jose import jwt
 import requests, os
+from dotenv import load_dotenv
 
-from mangum import Mangum
-
+load_dotenv()
 
 # Create database tables
 # models.Base.metadata.create_all(bind=engine)
@@ -33,7 +33,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-handler = Mangum(app)
+if os.getenv("ENV") == "development":
+    pass
+else:
+    from mangum import Mangum
+    handler = Mangum(app)
 
 # Add CORS middleware
 app.add_middleware(
