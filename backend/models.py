@@ -146,7 +146,7 @@ class Message(Base):
     sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     sender_handle = Column(String, nullable=False)  # Denormalized for performance
     content = Column(Text, nullable=False)
-    timestamp = Column(DateTime, server_default=func.current_timestamp())
+    created_at = Column(DateTime, server_default=func.current_timestamp())
     is_read = Column(Boolean, default=False)
 
     # Relationships

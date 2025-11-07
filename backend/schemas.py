@@ -116,7 +116,7 @@ class MessageResponse(BaseModel):
     id: int
     sender_id: int
     content: str
-    timestamp: datetime
+    created_at: datetime
     created_at: datetime
     is_read: bool
 
@@ -129,7 +129,7 @@ class MessageResponse(BaseModel):
             id=message.id,
             sender_id=message.sender_id,
             content=message.content,
-            timestamp=message.created_at,
+            created_at=message.created_at,
             created_at=message.created_at,
             is_read=message.is_read
         )
