@@ -18,14 +18,15 @@ from webhook import router as webhook_router
 from fastapi import Security
 from fastapi.security import HTTPBearer
 from jose import jwt
-import requests, os
+import requests
+import os
 import logging
+from dotenv import load_dotenv
 
 # Module logger for backend
 logger = logging.getLogger("tuitter.backend")
 
-from mangum import Mangum
-
+load_dotenv()
 
 # Create database tables
 # models.Base.metadata.create_all(bind=engine)
@@ -37,7 +38,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-handler = Mangum(app)
+if os.getenv("ENV") == "development":
+    pass
+else:
+    from mangum import Mangum
+    handler = Mangum(app)
 
 # Add CORS middleware
 app.add_middleware(
