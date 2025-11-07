@@ -66,25 +66,23 @@ def verify_jwt(token=Security(auth_scheme)):
     try:
         header = jwt.get_unverified_header(token.credentials)
         key = next(k for k in JWKS["keys"] if k["kid"] == header["kid"])
-        # NOTE: Cognito id_tokens include an `at_hash` claim when an
-        # access_token was issued alongside the id_token. The python-jose
-        # library will try to validate `at_hash` against a provided
-        # access_token value; since our API accepts only a single
-        # Authorization: Bearer <token> header (we send id_token), there is
-        # no access_token to compare against and jose raises a JWTClaimsError
-        # "No access_token provided to compare against at_hash claim.".
-        #
-        # To keep the backend minimal and accept id_tokens directly from the
-        # TUI, disable at_hash verification. This avoids requiring the
-        # client to send both tokens in the request.
+        # Decode and validate the token against the Cognito JWKS, audience and issuer.
+        # The API requires an OAuth2 access token (token_use == 'access') as the
+        # bearer token for resource access. Reject id_tokens presented as the
+        # Authorization bearer to avoid relying on id_token at_hash comparisons
+        # or other client-only claims.
         claims = jwt.decode(
             token.credentials,
             key,
             algorithms=["RS256"],
             audience=COGNITO_APP_CLIENT_ID,
             issuer=ISSUER,
-            options={"verify_at_hash": False},
         )
+
+        # Enforce this is an access token
+        if claims.get("token_use") != "access":
+            raise Exception("Presenting token is not an access token")
+
         return claims
     except Exception as e:
         # Emit a short debug log so CloudWatch captures the exact verification
