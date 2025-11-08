@@ -275,10 +275,10 @@ def get_conversations(
         # Get last message for preview
         last_message = db.query(models.Message).filter(
             models.Message.conversation_id == conv.id
-        ).order_by(desc(models.Message.timestamp)).first()
+        ).order_by(desc(models.Message.created_at)).first()
         
         last_message_preview = last_message.content[:100] if last_message else ""
-        last_message_at = last_message.timestamp if last_message else conv.created_at
+        last_message_at = last_message.created_at if last_message else conv.created_at
         
         result.append(
             schemas.ConversationResponse(
@@ -349,10 +349,10 @@ def get_or_create_dm(
     # ✅ Get last message for preview (same pattern as /conversations endpoint)
     last_message = db.query(models.Message).filter(
         models.Message.conversation_id == conversation.id
-    ).order_by(desc(models.Message.timestamp)).first()
+    ).order_by(desc(models.Message.created_at)).first()
     
     last_message_preview = last_message.content[:100] if last_message else ""
-    last_message_at = last_message.timestamp if last_message else conversation.created_at
+    last_message_at = last_message.created_at if last_message else conversation.created_at
 
     return schemas.ConversationResponse(
         id=conversation.id,
