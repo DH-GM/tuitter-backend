@@ -70,7 +70,7 @@ class UserSettings(Base):
     updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
     # Relationships
-    user = relationship("User", back_populates="settings")
+    user = relationship("User")
 
 
 class Post(Base):
@@ -128,7 +128,7 @@ class Conversation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, server_default=func.current_timestamp())
-    
+
     # Relationships
     participants = relationship(
         "User",

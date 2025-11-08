@@ -23,17 +23,17 @@ def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
     # Find existing conversation between these two users
     # This is more complex with many-to-many, so we need to find conversations
     # where both users are participants
-    
+
     # Subquery to find conversations with user_a
     conv_with_a = db.query(models.conversation_participants.c.conversation_id).filter(
         models.conversation_participants.c.user_id == user_a_id
     ).subquery()
-    
+
     # Subquery to find conversations with user_b
     conv_with_b = db.query(models.conversation_participants.c.conversation_id).filter(
         models.conversation_participants.c.user_id == user_b_id
     ).subquery()
-    
+
     # Find conversations that have both users
     existing_conv = db.query(models.Conversation).filter(
         and_(
@@ -41,15 +41,15 @@ def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
             models.Conversation.id.in_(conv_with_b)
         )
     ).first()
-    
+
     if existing_conv:
         return existing_conv
-    
+
     # Create new conversation
     new_conv = models.Conversation()
     db.add(new_conv)
     db.flush()  # Get the ID
-    
+
     # Add both participants to the junction table
     db.execute(
         models.conversation_participants.insert().values([
@@ -59,7 +59,7 @@ def get_or_create_conversation(db: Session, user_a_id: int, user_b_id: int):
     )
     db.commit()
     db.refresh(new_conv)
-    
+
     return new_conv
 
 
@@ -79,13 +79,13 @@ def create_message(db: Session, conversation_id: int, sender_id: int, sender_han
         content=content
     )
     db.add(message)
-    
+
     # Update conversation's last message (if you add these columns to the conversations table)
     # conversation = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
     # if conversation:
     #     conversation.last_message_preview = content[:100]
     #     conversation.last_message_at = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(message)
     return message

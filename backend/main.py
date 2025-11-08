@@ -18,8 +18,13 @@ from webhook import router as webhook_router
 from fastapi import Security
 from fastapi.security import HTTPBearer
 from jose import jwt
-import requests, os
+import requests
+import os
+import logging
 from dotenv import load_dotenv
+
+# Module logger for backend
+logger = logging.getLogger("tuitter.backend")
 
 load_dotenv()
 
@@ -66,6 +71,11 @@ def verify_jwt(token=Security(auth_scheme)):
     try:
         header = jwt.get_unverified_header(token.credentials)
         key = next(k for k in JWKS["keys"] if k["kid"] == header["kid"])
+        # Decode and validate the token against the Cognito JWKS, audience and issuer.
+        # The API requires an OAuth2 access token (token_use == 'access') as the
+        # bearer token for resource access. Reject id_tokens presented as the
+        # Authorization bearer to avoid relying on id_token at_hash comparisons
+        # or other client-only claims.
         claims = jwt.decode(
             token.credentials,
             key,
@@ -73,8 +83,36 @@ def verify_jwt(token=Security(auth_scheme)):
             audience=COGNITO_APP_CLIENT_ID,
             issuer=ISSUER,
         )
+
+        # Enforce this is an access token
+        if claims.get("token_use") != "access":
+            raise Exception("Presenting token is not an access token")
+
         return claims
     except Exception as e:
+        # Emit a short debug log so CloudWatch captures the exact verification
+        # failure (kid/aud/issuer mismatch, expired token, etc.). This log is
+        # intentionally minimal and avoids printing the full token.
+        try:
+            kid = None
+            try:
+                kid = jwt.get_unverified_header(token.credentials).get("kid")
+            except Exception:
+                pass
+            logger.exception(
+                "JWT verification failed (kid=%s, issuer=%s, aud=%s): %s",
+                kid,
+                ISSUER,
+                COGNITO_APP_CLIENT_ID,
+                e,
+            )
+        except Exception:
+            # Best-effort logging; avoid crashing the handler when logging fails
+            try:
+                print("JWT verification failed; logging attempt also failed.")
+            except Exception:
+                pass
+
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {e}")
 
 
@@ -196,7 +234,17 @@ def create_post(
 ):
     """Create a new post"""
     user = get_current_user_from_handle(db, handle)
-    post = crud.create_post(db, user.id, user.username, post_data.content)
+    # Forward attachments from the PostCreate schema to CRUD if present.
+    attachments = None
+    if getattr(post_data, 'attachments', None):
+        try:
+            # Pydantic v2 uses model_dump(); older versions use dict()
+            attachments = [a.model_dump() if hasattr(a, 'model_dump') else a.dict() for a in post_data.attachments]
+        except Exception:
+            # Fallback: use raw list (may already be plain dicts)
+            attachments = post_data.attachments
+
+    post = crud.create_post(db, user.id, user.username, post_data.content, attachments=attachments)
     return schemas.PostResponse.from_orm(post, user.id, False, False)
 
 
@@ -271,15 +319,15 @@ def get_conversations(
     for conv in conversations:
         # Get all participant handles (excluding current user)
         participant_handles = [p.username for p in conv.participants if p.id != user.id]
-        
+
         # Get last message for preview
         last_message = db.query(models.Message).filter(
             models.Message.conversation_id == conv.id
         ).order_by(desc(models.Message.created_at)).first()
-        
+
         last_message_preview = last_message.content[:100] if last_message else ""
         last_message_at = last_message.created_at if last_message else conv.created_at
-        
+
         result.append(
             schemas.ConversationResponse(
                 id=conv.id,
@@ -325,8 +373,8 @@ def send_message(
 
 @app.post("/dm", response_model=schemas.ConversationResponse)
 def get_or_create_dm(
-    conversation_data: schemas.ConversationCreate, 
-    db: Session = Depends(get_db), 
+    conversation_data: schemas.ConversationCreate,
+    db: Session = Depends(get_db),
     user=Depends(verify_jwt)
 ):
     """Get or create a direct message conversation between two users"""
