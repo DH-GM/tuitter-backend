@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '0002_add_conversation_title_is_group'
+revision = '0002'
 down_revision = '0001_add_last_read_at'
 branch_labels = None
 depends_on = None
