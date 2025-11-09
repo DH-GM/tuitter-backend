@@ -19,8 +19,10 @@ phases:
       - echo "Preparing to run migrations"
       # Optional: create a pre-migration RDS snapshot (uncomment to enable)
       # - aws rds create-db-snapshot --db-instance-identifier mydb --db-snapshot-identifier pre-migration-$(date +%Y%m%d%H%M%S) || true
-      - echo "Running DB migrations with Alembic (do not print DATABASE_URL)"
-      - alembic -c backend/alembic.ini upgrade head
+  - echo "Running DB migrations with Alembic (do not print DATABASE_URL)"
+  - alembic -c backend/alembic.ini upgrade head
+  # Print the current alembic revision so CodeBuild logs show what was applied
+  - alembic -c backend/alembic.ini current
 
   build:
     commands:
