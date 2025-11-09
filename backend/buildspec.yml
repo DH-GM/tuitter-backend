@@ -1,0 +1,35 @@
+version: 0.2
+
+env:
+  variables:
+    ENV: "production"
+    LOG_LEVEL: "INFO"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing Python dependencies"
+      - python -m pip install --upgrade pip
+      - pip install -r backend/requirements.txt
+
+  pre_build:
+    commands:
+      - echo "Preparing to run migrations"
+      # Optional: create a pre-migration RDS snapshot (uncomment to enable)
+      # - aws rds create-db-snapshot --db-instance-identifier mydb --db-snapshot-identifier pre-migration-$(date +%Y%m%d%H%M%S) || true
+      - echo "Running DB migrations with Alembic (do not print DATABASE_URL)"
+      - alembic -c backend/alembic.ini upgrade head
+
+  build:
+    commands:
+      - echo "Compile-checking backend Python files"
+      - python3 -m compileall backend || true
+
+  post_build:
+    commands:
+      - echo "Build finished"
+
+artifacts:
+  files: []

@@ -25,7 +25,8 @@ conversation_participants = Table(
     'conversation_participants',
     Base.metadata,
     Column('conversation_id', Integer, ForeignKey('conversations.id', ondelete='CASCADE'), primary_key=True),
-    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('last_read_at', DateTime, nullable=True)
 )
 
 

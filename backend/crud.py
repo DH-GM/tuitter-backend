@@ -67,7 +67,7 @@ def get_messages_for_conversation(db: Session, conversation_id: int):
     """Get all messages in a conversation, ordered by timestamp"""
     return db.query(models.Message).filter(
         models.Message.conversation_id == conversation_id
-    ).order_by(models.Message.timestamp.asc()).all()
+    ).order_by(models.Message.created_at.asc()).all()
 
 
 def create_message(db: Session, conversation_id: int, sender_id: int, sender_handle: str, content: str):
