@@ -328,13 +328,33 @@ def get_conversations(
         last_message_preview = last_message.content[:100] if last_message else ""
         last_message_at = last_message.created_at if last_message else conv.created_at
 
+        # Determine per-user last_read_at from the junction table (may be NULL)
+        try:
+            last_read = db.query(models.conversation_participants.c.last_read_at).filter(
+                models.conversation_participants.c.conversation_id == conv.id,
+                models.conversation_participants.c.user_id == user.id,
+            ).scalar()
+        except Exception:
+            last_read = None
+
+        # unread if there is a last_message and it's newer than last_read (or last_read is None)
+        unread = False
+        if last_message:
+            if last_read is None:
+                unread = True
+            else:
+                try:
+                    unread = last_message.created_at > last_read
+                except Exception:
+                    unread = True
+
         result.append(
             schemas.ConversationResponse(
                 id=conv.id,
                 participant_handles=participant_handles,
                 last_message_preview=last_message_preview,
                 last_message_at=last_message_at,
-                unread=False,  # TODO: implement unread logic
+                unread=bool(unread),
             )
         )
 
@@ -361,9 +381,28 @@ def send_message(
     user=Depends(verify_jwt),
 ):
     """Send a message in a conversation"""
-    sender = crud.get_user_by_username(db, message_data.sender_handle)
-    if not sender:
-        raise HTTPException(status_code=404, detail="Sender not found")
+    # Derive sender handle from verified JWT claims rather than trusting client-supplied data
+    claims = user or {}
+    sender_handle = (
+        claims.get("username")
+        or claims.get("cognito:username")
+        or claims.get("preferred_username")
+    )
+
+    if not sender_handle:
+        raise HTTPException(status_code=401, detail="Unable to determine sender from token")
+
+    # Ensure the sender user exists (auto-create if necessary for demo flow)
+    sender = get_current_user_from_handle(db, sender_handle, auto_create=True)
+
+    # Validate conversation exists and that the sender is a participant
+    conv = crud.get_conversation_by_id(db, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    participant_ids = {p.id for p in conv.participants}
+    if sender.id not in participant_ids:
+        raise HTTPException(status_code=403, detail="Sender is not a participant of this conversation")
 
     message = crud.create_message(
         db, conversation_id, sender.id, sender.username, message_data.content
@@ -398,7 +437,7 @@ def get_or_create_dm(
     last_message = db.query(models.Message).filter(
         models.Message.conversation_id == conversation.id
     ).order_by(desc(models.Message.created_at)).first()
-    
+
     last_message_preview = last_message.content[:100] if last_message else ""
     last_message_at = last_message.created_at if last_message else conversation.created_at
 

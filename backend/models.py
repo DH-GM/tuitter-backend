@@ -25,7 +25,8 @@ conversation_participants = Table(
     'conversation_participants',
     Base.metadata,
     Column('conversation_id', Integer, ForeignKey('conversations.id', ondelete='CASCADE'), primary_key=True),
-    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    Column('user_id', Integer, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('last_read_at', DateTime, nullable=True)
 )
 
 
@@ -128,6 +129,10 @@ class Conversation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, server_default=func.current_timestamp())
+
+    # Optional title for group conversations and a flag for group vs direct-message
+    title = Column(String(255), nullable=True)
+    is_group = Column(Boolean, default=False, nullable=False, server_default='false')
 
     # Relationships
     participants = relationship(
