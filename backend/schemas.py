@@ -115,6 +115,7 @@ class MessageCreate(BaseModel):
 class MessageResponse(BaseModel):
     id: int
     sender_id: int
+    sender_handle: str
     content: str
     created_at: datetime
     is_read: bool
@@ -127,6 +128,7 @@ class MessageResponse(BaseModel):
         return cls(
             id=message.id,
             sender_id=message.sender_id,
+            sender_handle=message.sender_handle,
             content=message.content,
             created_at=message.created_at,
             is_read=message.is_read
